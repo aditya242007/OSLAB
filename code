@@ -1,1 +1,149 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <signal.h>
+#include <sys/stat.h>
+#include <time.h>
 
+/* ---------------- LOGGING MODULE ---------------- */
+void log_action(char user[], char action[], char status[]) {
+    FILE *fp = fopen("syscall_log.txt", "a");
+    time_t now;
+    time(&now);
+
+    fprintf(fp, "User: %s | Action: %s | Status: %s | Time: %s",
+            user, action, status, ctime(&now));
+
+    fclose(fp);
+}
+
+/* ---------------- AUTHENTICATION MODULE ---------------- */
+int authenticate(char user[], char role[]) {
+    char uname[20], pass[20];
+
+    printf("\nAuthentication Module\n");
+    printf("Username: ");
+    scanf("%s", uname);
+    printf("Password: ");
+    scanf("%s", pass);
+
+    if (strcmp(uname, "admin") == 0 && strcmp(pass, "admin123") == 0) {
+        strcpy(user, uname);
+        strcpy(role, "ADMIN");
+        return 1;
+    }
+    if (strcmp(uname, "guest") == 0 && strcmp(pass, "guest") == 0) {
+        strcpy(user, uname);
+        strcpy(role, "GUEST");
+        return 1;
+    }
+
+    return 0;
+}
+
+/* ---------------- AUTHORIZATION MODULE ---------------- */
+int authorize(char role[], int choice) {
+    printf("\nAuthorization Module\n");
+
+    if (strcmp(role, "ADMIN") == 0)
+        return 1;  // Admin allowed everything
+
+    if (strcmp(role, "GUEST") == 0 && choice <= 3)
+        return 1;  // Guest limited access
+
+    return 0;
+}
+
+/* ---------------- SECURE SYSTEM CALL HANDLER ---------------- */
+void secure_syscall_handler(int choice, char user[], char role[]) {
+    int fd, pid;
+    char file[30], buffer[100];
+
+    switch (choice) {
+        case 1:
+            printf("PID: %d\n", getpid());
+            log_action(user, "getpid()", "SUCCESS");
+            break;
+
+        case 2:
+            pid = fork();
+            if (pid == 0)
+                printf("Child Process Created\n");
+            else
+                printf("Parent Process\n");
+            log_action(user, "fork()", "SUCCESS");
+            break;
+
+        case 3:
+            printf("Enter file name: ");
+            scanf("%s", file);
+            fd = open(file, O_RDONLY);
+            if (fd < 0) {
+                printf("File Access Failed\n");
+                log_action(user, "read()", "FAILED");
+                break;
+            }
+            read(fd, buffer, sizeof(buffer));
+            printf("File Content:\n%s\n", buffer);
+            close(fd);
+            log_action(user, "read()", "SUCCESS");
+            break;
+
+        case 4:
+            printf("Changing file permission...\n");
+            chmod("secure.txt", 0444);
+            log_action(user, "chmod()", "SUCCESS");
+            break;
+
+        case 5:
+            printf("Enter PID to terminate: ");
+            scanf("%d", &pid);
+            kill(pid, SIGKILL);
+            log_action(user, "kill()", "SUCCESS");
+            break;
+
+        case 6:
+            log_action(user, "exit()", "SUCCESS");
+            exit(0);
+
+        default:
+            printf("Invalid choice\n");
+    }
+}
+
+/* ---------------- MAIN ---------------- */
+int main() {
+    char user[20], role[10];
+    int choice;
+
+    printf("Start\n");
+    printf("\nUser Requests System Call");
+
+    printf("\n\n1. Get Process ID");
+    printf("\n2. Create Process (fork)");
+    printf("\n3. Read File");
+    printf("\n4. Change File Permission (Admin)");
+    printf("\n5. Kill Process (Admin)");
+    printf("\n6. Exit");
+    printf("\nEnter choice: ");
+    scanf("%d", &choice);
+
+    if (!authenticate(user, role)) {
+        printf("Authentication Failed\nAccess Denied\n");
+        log_action("UNKNOWN", "Login Attempt", "FAILED");
+        return 0;
+    }
+
+    if (!authorize(role, choice)) {
+        printf("Authorization Failed\nAccess Denied\n");
+        log_action(user, "Unauthorized Access", "FAILED");
+        return 0;
+    }
+
+    secure_syscall_handler(choice, user, role);
+
+    printf("End\n");
+    return 0;
+}
